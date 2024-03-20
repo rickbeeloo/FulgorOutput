@@ -4,8 +4,8 @@ use clap::{Arg, App};
 use std::collections::HashMap;
 use indicatif::{ProgressBar, ProgressStyle};
 
-fn parse_line<'a>(line: &'a str, suffix: &str) -> (u32, &'a str) {
-    let index: u32 = line.split("\t").nth(0).unwrap().parse().expect("Could not parse index as u32");
+fn parse_line<'a>(line: &'a str, suffix: &str) -> (u64, &'a str) {
+    let index: u64 = line.split("\t").nth(0).unwrap().parse().expect("Could not parse index as u64");
     if line.contains("/") {
         let part = line.split("/").last().unwrap();
         return match part.strip_suffix(suffix) {
@@ -16,11 +16,11 @@ fn parse_line<'a>(line: &'a str, suffix: &str) -> (u32, &'a str) {
     (index, line)
 }
 
-fn read_mfur_ids(file_path: &str, seq_suffix:&str) -> HashMap<u32, String> {
+fn read_mfur_ids(file_path: &str, seq_suffix:&str) -> HashMap<u64, String> {
     let f = File::open(file_path).expect("File not found");
     let reader = BufReader::new(f);
     let mut start_parsing: bool = false;
-    let mut index_to_id: HashMap<u32, String> = HashMap::new();
+    let mut index_to_id: HashMap<u64, String> = HashMap::new();
     for line in reader.lines() {
         let line = line.unwrap();
 
@@ -38,11 +38,11 @@ fn read_mfur_ids(file_path: &str, seq_suffix:&str) -> HashMap<u32, String> {
     index_to_id
 }
 
-fn as_chunk_id(chunk_str: &str) -> u32 {
-    chunk_str.split(":").next().unwrap().parse().expect("Failed to parse chunk id as u32")
+fn as_chunk_id(chunk_str: &str) -> u64 {
+    chunk_str.split(":").next().unwrap().parse().expect("Failed to parse chunk id as u64")
 }
 
-fn extract_chunks(line: &str, identifier: &str, id_to_name: &HashMap<u32, String>, writer: &mut BufWriter<File>) {
+fn extract_chunks(line: &str, identifier: &str, id_to_name: &HashMap<u64, String>, writer: &mut BufWriter<File>) {
     let stripped_line = line.trim_start_matches("chunk_id = ");
 
     // The first value is the chunk_id
@@ -61,7 +61,7 @@ fn extract_chunks(line: &str, identifier: &str, id_to_name: &HashMap<u32, String
     });
 }
 
-fn parse_fulgor_file(file_path: &str, id_to_name: &HashMap<u32, String>, output_name: &str) { 
+fn parse_fulgor_file(file_path: &str, id_to_name: &HashMap<u64, String>, output_name: &str) { 
     // Open for reading
     let f = File::open(file_path).expect("Fulgor file is missing");
     

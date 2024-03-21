@@ -44,30 +44,60 @@ fn read_mfur_ids(file_path: &str, seq_suffix:&str) -> HashMap<u64, String> {
 
 fn as_chunk_id(chunk_str: &str) -> u64 {
     let spl: Vec<&str> = chunk_str.split(":").collect();
+    // println!("Vec: {:?}", spl);
+    println!("Incoming chunk: {}", chunk_str);
     if spl.len() == 0 {
+       // println!("0-len one");
         chunk_str.trim_end_matches(":").parse().unwrap()
-        
     } else {
+       // println!(">>> 0-len one");
         spl[0].parse().unwrap()
     }
 }
 
+fn as_match_id(loc_str: &str) -> u64 {
+    loc_str.split(":").next().unwrap().parse().expect("Could not parse match id")
+}
+
 fn extract_chunks(line: &str, identifier: &str, id_to_name: &HashMap<u64, String>, writer: &mut BufWriter<File>) {
-    let stripped_line = line.trim_start_matches("chunk_id = ");
+    
+    let mut stripped_line = line.trim_start_matches("chunk_id = ").split(" ");
 
     // The first value is the chunk_id
-    stripped_line.split(" ").enumerate().for_each(|(top_n, chunk)| {
-            let chunk_id =  as_chunk_id(&chunk);
-            // Get the sequence identifier for the given index
-            match id_to_name.get(&chunk_id) {
-                Some(sequence_id) => {
-                    write!(writer, "{}\t{}\t{}\n", identifier, top_n+1, sequence_id).unwrap();
-                }
-                None => {
-                    panic!("There is a sequence in the Fulgor file that is absent from the file names: {}", chunk_id);
-                }
-            }       
-    });
+    let chunk_id = as_chunk_id(stripped_line.next().expect("Incorrect fulgor format"));
+
+    for (top, chunk) in stripped_line.enumerate() {
+        let match_idx = as_match_id(chunk);
+            match id_to_name.get(&match_idx) {
+            Some(sequence_id) => {
+                write!(writer, "{}\t{}\t{}\t{}\n", identifier, chunk_id, top+1, sequence_id).unwrap();
+            }
+            None => {
+                panic!("There is a sequence in the Fulgor file that is absent from the file names: {}", chunk_id);
+            }
+        }
+    }
+  
+    // for (top_n, chunk) in stripped_line.split(" ").enumerate() {
+    //     if top_n == 0 {
+    //     }
+    //         println!("Extracing: {} from: {}", identifier, line);
+    //         println!("Line before: {}", line);
+    //         println!("Stipped: {:?}", x);
+    //         println!("Chunk ref: {}", chunk);
+    //         let chunk_id =  as_chunk_id(&chunk);
+            
+
+    //         // Get the sequence identifier for the given index
+    //         match id_to_name.get(&chunk_id) {
+    //             Some(sequence_id) => {
+    //                 write!(writer, "{}\t{}\t{}\n", identifier, top_n+1, sequence_id).unwrap();
+    //             }
+    //             None => {
+    //                 panic!("There is a sequence in the Fulgor file that is absent from the file names: {}", chunk_id);
+    //             }
+    //         }       
+    // };
 }
 
 fn parse_fulgor_file(file_path: &str, id_to_name: &HashMap<u64, String>, output_name: &str) { 
@@ -77,7 +107,7 @@ fn parse_fulgor_file(file_path: &str, id_to_name: &HashMap<u64, String>, output_
     
     // Open writer and write header
     let mut writer = BufWriter::new(File::create(output_name).expect("Cant open output"));
-    write!(writer, "query\ttop\tmatch\n").unwrap();
+    write!(writer, "query\tchunk\ttop\tmatch\n").unwrap();
 
     let mut identifier = String::new();
     let file_size = f.metadata().unwrap().len();
@@ -89,7 +119,10 @@ fn parse_fulgor_file(file_path: &str, id_to_name: &HashMap<u64, String>, output_
     );
 
     let reader = BufReader::new(f);
+    let mut c = 0;
     for line in reader.lines() {
+        c += 1;
+        println!("c: {}", c);
         let line = line.unwrap();
         // If we have a line starting with ">" we have a header tag
         if line.starts_with(">") {

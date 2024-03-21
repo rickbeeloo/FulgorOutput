@@ -113,7 +113,15 @@ pub mod stats {
                 ((col("pos_count").cast(DataType::Float32) /  ((col("neg_count").cast(DataType::Float32) / lit(sample_size)))).log(2.0)
             )).alias("fold_change") // Normalize against sample size
         ]
-        ).collect().expect("Failed to calculate fold changes");
+        ).sort(
+            "fold_change",
+            SortOptions {
+                descending: true,
+                nulls_last: true,
+                ..Default::default()
+            },
+        )
+        .collect().expect("Failed to calculate fold changes");
     }
 
     pub fn get_stats(fulgor_file_path: &str, chunk_anno_path: &str, match_anno_path: &str) {

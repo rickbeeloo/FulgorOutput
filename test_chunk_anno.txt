@@ -1,4 +1,0 @@
-genome_id	contig_id	chunk	chunk_annotation
-query1	contig1	0	AMR
-query1	contig1	1	AMR
-query2	contig1	0	AMR

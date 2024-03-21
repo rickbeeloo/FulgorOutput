@@ -17,7 +17,8 @@ pub mod stats {
         // This is a chunk annotation, so we need two columns. 
         // one called "chunk" and another one "chunk_annotation"
         let schema = Schema::from_iter(vec![
-            Field::new("query", DataType::String),
+            Field::new("query_genome_id", DataType::String),
+            Field::new("query_contig_id", DataType::String),
             Field::new("chunk", DataType::UInt64),
             Field::new("chunk_annotation", DataType::String)
         ]);
@@ -28,7 +29,7 @@ pub mod stats {
         // This is a chunk annotation, so we need two columns. 
         // one called "chunk" and another one "chunk_annotation"
         let schema = Schema::from_iter(vec![
-            Field::new("match", DataType::String),
+            Field::new("match_genome_id", DataType::String),
             Field::new("match_annotation", DataType::String)
         ]);
         return read_table(&file_path, schema);
@@ -37,10 +38,10 @@ pub mod stats {
     fn read_fulgor_table(tabular_path: &str) -> LazyFrame {
         // Define the data scheme
         let schema = Schema::from_iter(vec![
-            Field::new("query", DataType::String),
+            Field::new("query", DataType::String), // query is a concatenation of genome_id&contig_id
             Field::new("chunk", DataType::UInt64),
             Field::new("top", DataType::UInt64),
-            Field::new("match", DataType::String) // We have to make sure to get genome ids as strings -  always
+            Field::new("match_genome_id", DataType::String) // We have to make sure to get genome ids as strings -  always
         ]);
 
         return read_table(&tabular_path, schema);
@@ -50,25 +51,29 @@ pub mod stats {
         let sample_size = 10;
 
         // This is quite some memory if we join it all together, perhaps split up later, todo
-        let comb_table = fulgor_table.join(
-            chunk_table,
-            [col("query"), col("chunk")],
-            [col("query"), col("chunk")],
-            JoinArgs::new(JoinType::Left),
-        ).join(
-            match_table,
-            [col("match")],
-            [col("match")],
-            JoinArgs::new(JoinType::Left),
-        )
+        let comb_table = fulgor_table
         .with_columns([
             col("query")
             .str()
             .split_exact(lit("_"),1)
             .struct_()
-            .rename_fields(["genome_id".into(), "contig_id".into()].to_vec())
+            .rename_fields(["query_genome_id".into(), "query_contig_id".into()].to_vec())
             ])
-        .unnest(["query"]);
+        .unnest(["query"])
+        .join(
+            match_table,
+            [col("match_genome_id")],
+            [col("match_genome_id")],
+            JoinArgs::new(JoinType::Left),
+        )
+        .join(
+            chunk_table,
+            [col("query_genome_id"), col("query_contig_id"), col("chunk")],
+            [col("query_genome_id"), col("query_contig_id"), col("chunk")],
+            JoinArgs::new(JoinType::Left),
+        );
+
+        println!("Come table: {:?}", comb_table.clone().collect());
         
 
         let positives = comb_table.clone()
@@ -86,7 +91,7 @@ pub mod stats {
         .filter(
             int_range(lit(0), len(), 1, DataType::UInt64)
             .shuffle(Some(12345)) // random seed
-            .over(["genome_id"])
+            .over(["match_genome_id"])
             .lt(sample_size)
         )
         .group_by(["match_annotation"])
@@ -113,10 +118,14 @@ pub mod stats {
 
     pub fn get_stats(fulgor_file_path: &str, chunk_anno_path: &str, match_anno_path: &str) {
         let fulgor_table = read_fulgor_table(&fulgor_file_path);
+        println!("Fulgor table: {:?}", fulgor_table.clone().collect());
         let chunk_table = read_chunk_annotation(&chunk_anno_path);
+        println!("Chunk table: {:?}", chunk_table.clone().collect());
         let match_table = read_match_annotation(&match_anno_path);
+        println!("Chunk table: {:?}", match_table.clone().collect());
         let fold_table = process_genomes(fulgor_table, chunk_table, match_table);
         println!("fold table: {:?}", fold_table);
+
     }
 
 

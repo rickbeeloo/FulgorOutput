@@ -48,7 +48,7 @@ pub mod stats {
     }
 
     fn process_genomes(fulgor_table: LazyFrame, chunk_table: LazyFrame, match_table: LazyFrame) -> DataFrame {
-        let sample_size = 10;
+        let sample_size = 100;
 
         // This is quite some memory if we join it all together, perhaps split up later, todo
         let comb_table = fulgor_table

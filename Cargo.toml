@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 clap = "3.0.0"
 indicatif = "0.15"
+polars = { version = "x", features = ["lazy", "strings", "list_to_struct", "regex", "dtype-struct", "range", "random", "log"]}

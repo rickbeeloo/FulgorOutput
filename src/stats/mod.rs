@@ -72,8 +72,6 @@ pub mod stats {
             [col("query_genome_id"), col("query_contig_id"), col("chunk")],
             JoinArgs::new(JoinType::Left),
         );
-
-        println!("Come table: {:?}", comb_table.clone().collect());
         
 
         let positives = comb_table.clone()
@@ -101,7 +99,7 @@ pub mod stats {
         // Combine positive and negative samples
         // For each psoitive we want to know the negative
         // also other way around?
-        return positives
+        let result = positives
         .join(
             negative_samples,
             [col("match_annotation")],
@@ -120,19 +118,25 @@ pub mod stats {
                 nulls_last: true,
                 ..Default::default()
             },
-        )
-        .collect().expect("Failed to calculate fold changes");
+        );
+
+        // Show the entire plan 
+        //let plan = result.explain(true).unwrap();
+        //println!("Extraction plan: {}", plan);
+
+        return result.collect().expect("Failed to calculate fold changes");
     }
 
-    pub fn get_stats(fulgor_file_path: &str, chunk_anno_path: &str, match_anno_path: &str) {
+    pub fn get_stats(fulgor_file_path: &str, chunk_anno_path: &str, match_anno_path: &str, output_path: &str) {
         let fulgor_table = read_fulgor_table(&fulgor_file_path);
-        println!("Fulgor table: {:?}", fulgor_table.clone().collect());
         let chunk_table = read_chunk_annotation(&chunk_anno_path);
-        println!("Chunk table: {:?}", chunk_table.clone().collect());
         let match_table = read_match_annotation(&match_anno_path);
-        println!("Chunk table: {:?}", match_table.clone().collect());
-        let fold_table = process_genomes(fulgor_table, chunk_table, match_table);
+        let mut fold_table = process_genomes(fulgor_table, chunk_table, match_table);
         println!("fold table: {:?}", fold_table);
+
+        let mut file = std::fs::File::create(output_path).unwrap();
+        CsvWriter::new(&mut file).finish(&mut fold_table).unwrap();
+
 
     }
 

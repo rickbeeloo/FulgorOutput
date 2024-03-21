@@ -84,7 +84,7 @@ fn main() {
             let match_anno_file = stats_matches.value_of("match_annotation_file").expect("Anno file missing");
             let output_file = stats_matches.value_of("output").expect("No output");
 
-            get_stats(&tab_file, &chunk_anno_file, &match_anno_file);
+            get_stats(&tab_file, &chunk_anno_file, &match_anno_file, &output_file);
         }
 
         _ => {

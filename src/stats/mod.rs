@@ -61,62 +61,91 @@ pub mod stats {
             ])
         .unnest(["query"])
         .join(
-            match_table,
-            [col("match_genome_id")],
-            [col("match_genome_id")],
-            JoinArgs::new(JoinType::Left),
-        )
-        .join(
             chunk_table,
             [col("query_genome_id"), col("query_contig_id"), col("chunk")],
             [col("query_genome_id"), col("query_contig_id"), col("chunk")],
             JoinArgs::new(JoinType::Left),
         );
-        
 
-        let positives = comb_table.clone()
+        // Make a table to store the AMR count per genome
+        let amr_table = comb_table.clone()
         .filter(
             col("chunk_annotation").is_not_null()
         ) 
+        .group_by(["query_genome_id"])
+        .agg([(len() * lit(sample_size)).alias("amr_count")]); //basically we get the number of negatives to sample
+
+        // println!("AMR table: {}", amr_table.clone().collect().unwrap());
+        
+        let positives = comb_table
+        .clone()
+        .filter(
+            col("chunk_annotation").is_not_null()
+        ) 
+        .join(
+            match_table.clone(),
+            [col("match_genome_id")],
+            [col("match_genome_id")],
+            JoinArgs::new(JoinType::Left),
+        )
+        .with_columns([
+            (col("match_genome_id").len().over(["match_genome_id"]).alias("total_count"))
+        ])
         .group_by(["match_annotation"])
-        .agg([len().alias("pos_count")]);
+        .agg([
+            len().alias("pos_count"),
+            col("total_count").unique().sum().alias("pos_sample_size")
+            ]);
 
         // Randomly sample 10 per genome
-        let negative_samples = comb_table.clone()
+        let negatives = comb_table
         .filter(
             col("chunk_annotation").is_null()
+        )
+        .join(
+            amr_table,
+            [col("query_genome_id")],
+            [col("query_genome_id")],
+            JoinArgs::new(JoinType::Left),
         )
         .filter(
             int_range(lit(0), len(), 1, DataType::UInt64)
             .shuffle(Some(12345)) // random seed
             .over(["match_genome_id"])
-            .lt(sample_size)
+            .lt(col("amr_count").max()) // Sample at most X
         )
+        .join(
+            match_table,
+            [col("match_genome_id")],
+            [col("match_genome_id")],
+            JoinArgs::new(JoinType::Left),
+        )
+        .with_columns([
+            (col("match_genome_id").len().over(["match_genome_id"]).alias("total_count"))
+        ])
         .group_by(["match_annotation"])
-        .agg([len().alias("neg_count")]);
-
+        .agg(
+            [ 
+                (len()).alias("neg_count"),
+                col("total_count").unique().sum().alias("neg_sample_size")
+            ]);
 
         // Combine positive and negative samples
         // For each psoitive we want to know the negative
         // also other way around?
         let result = positives
         .join(
-            negative_samples,
+            negatives,
             [col("match_annotation")],
             [col("match_annotation")],
             JoinArgs::new(JoinType::Left),
         )
         .with_columns([
             (
-                (
-                    ((col("pos_count").cast(DataType::Float32) * (lit(sample_size) / col("neg_count").cast(DataType::Float32))) / lit(sample_size)).log(2.0)
-            )).alias("fold_change") // Normalize against sample size
+
+                ( (col("pos_count").cast(DataType::Float32) /  col("pos_sample_size").cast(DataType::Float32)) / (col("neg_count").cast(DataType::Float32) / col("neg_sample_size").cast(DataType::Float32))).log(2.0)
+            ).alias("fold_change") // Normalize against sample size
         ]
-        // .with_columns([
-        //     (
-        //         ((col("pos_count").cast(DataType::Float32) /  ((col("neg_count").cast(DataType::Float32) / lit(sample_size)))).log(2.0)
-        //     )).alias("fold_change") // Normalize against sample size
-        // ]
         ).sort(
             "fold_change",
             SortOptions {

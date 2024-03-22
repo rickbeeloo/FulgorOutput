@@ -111,7 +111,7 @@ pub mod stats {
         .filter(
             int_range(lit(0), len(), 1, DataType::UInt64)
             .shuffle(Some(12345)) // random seed
-            .over(["match_genome_id"])
+            .over(["query_genome_id"])
             .lt(col("amr_count").max()) // Sample at most X
         )
         .join(

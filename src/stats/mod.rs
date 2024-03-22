@@ -89,11 +89,11 @@ pub mod stats {
             JoinArgs::new(JoinType::Left),
         )
         .with_columns([
-            (col("match_genome_id").len().over(["match_genome_id"]).alias("total_count"))
+            (col("query_genome_id").len().over(["query_genome_id"]).alias("total_count"))
         ])
         .group_by(["match_annotation"])
         .agg([
-            len().alias("pos_count"),
+            (len()).alias("pos_count"),
             col("total_count").unique().sum().alias("pos_sample_size")
             ]);
 
@@ -121,7 +121,7 @@ pub mod stats {
             JoinArgs::new(JoinType::Left),
         )
         .with_columns([
-            (col("match_genome_id").len().over(["match_genome_id"]).alias("total_count"))
+            (col("query_genome_id").len().over(["query_genome_id"]).alias("total_count"))
         ])
         .group_by(["match_annotation"])
         .agg(

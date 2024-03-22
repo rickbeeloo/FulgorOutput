@@ -108,9 +108,15 @@ pub mod stats {
         )
         .with_columns([
             (
-                ((col("pos_count").cast(DataType::Float32) /  ((col("neg_count").cast(DataType::Float32) / lit(sample_size)))).log(2.0)
+                (
+                    ((col("pos_count").cast(DataType::Float32) * (lit(sample_size) / col("neg_count").cast(DataType::Float32))) / lit(sample_size)).log(2.0)
             )).alias("fold_change") // Normalize against sample size
         ]
+        // .with_columns([
+        //     (
+        //         ((col("pos_count").cast(DataType::Float32) /  ((col("neg_count").cast(DataType::Float32) / lit(sample_size)))).log(2.0)
+        //     )).alias("fold_change") // Normalize against sample size
+        // ]
         ).sort(
             "fold_change",
             SortOptions {
@@ -136,8 +142,6 @@ pub mod stats {
 
         let mut file = std::fs::File::create(output_path).unwrap();
         CsvWriter::new(&mut file).finish(&mut fold_table).unwrap();
-
-
     }
 
 

@@ -46,11 +46,7 @@ pub mod stats {
             Field::new("match_genome_id", DataType::Categorical(None, Default::default()))
         ]);
 
-        return read_table(&tabular_path, schema);
-    }
-
-    fn add_chunk_metadata(fulgor_table: LazyFrame, chunk_table: LazyFrame) -> LazyFrame {
-        let comb_table = fulgor_table
+        let table = read_table(&tabular_path, schema)
         .with_columns([
             col("query")
             .str()
@@ -62,7 +58,12 @@ pub mod stats {
         .with_columns([
             col("query_genome_id").cast(DataType::Categorical(None, Default::default())).alias("query_genome_id"),
             col("query_contig_id").cast(DataType::Categorical(None, Default::default())).alias("query_contig_id"),
-        ])
+        ]);
+        return table;
+    }
+
+    fn add_chunk_metadata(fulgor_table: DataFrame, chunk_table: LazyFrame) -> LazyFrame {
+        let comb_table = fulgor_table.lazy()
         .join(
             chunk_table,
             [col("query_genome_id"), col("query_contig_id"), col("chunk")],
@@ -168,46 +169,70 @@ pub mod stats {
         return result;
     }
 
-    fn process_genomes(fulgor_table: LazyFrame, chunk_table: LazyFrame, match_table: LazyFrame) -> DataFrame {
+    fn process_genomes(fulgor_table: LazyFrame, chunk_table: LazyFrame, match_table: LazyFrame) {
         let local: DateTime<Local> = Local::now();
         println!("{} Started calculations..", local);
         
         let sample_size: u32 = 100;
         
         enable_string_cache();
-        
+
+        let fulgor_table = fulgor_table.collect().expect("x");
+        let local: DateTime<Local> = Local::now();
+        println!("{} Got the Fulgor table..", local);
+
+        let n = Series::new("", &[4000]);
+
         // Add chunk metadata to the fulgor table
-        let comb_table = add_chunk_metadata(fulgor_table, chunk_table);
+        for i in 0..100 {
+            println!("Sample: {}", i);
+            // Generate random sample of size chunk table
+            let tag_df = fulgor_table.sample_n(&n, true, true, None)
+            .unwrap()
+            .lazy()
+            .select([col("*").exclude(["top", "match_genome_id"])])
+            .with_columns(
+                [col("query_genome_id").alias("chunk_annotation")]
+            );
 
-        // Make a table to store the AMR count per genome
-        let query_sample_table = get_query_counts(&comb_table, sample_size);
+            let comb_table = add_chunk_metadata(fulgor_table.clone(), tag_df);
 
-        // Get positive and negative set
-        // P.s clones are cheap, we only copy the exectuion plan as these are Lazy dataframe (so not the data)
-        let positives = get_positive_set(comb_table.clone(), match_table.clone());
-        let negatives = get_negative_set(comb_table.clone(), match_table.clone(), query_sample_table); 
+            // Make a table to store the AMR count per genome
+            let query_sample_table = get_query_counts(&comb_table, sample_size);
+    
+            // Get positive and negative set
+            // P.s clones are cheap, we only copy the exectuion plan as these are Lazy dataframe (so not the data)
+            let positives = get_positive_set(comb_table.clone(), match_table.clone());
+            let negatives = get_negative_set(comb_table.clone(), match_table.clone(), query_sample_table); 
+    
+            // Calculate the fold changes
+            let mut fold_table = calc_fold_change(positives, negatives).collect().expect("Polars failed");
+            println!("{:?}", fold_table.head(Some(10)));
+            let output_path = format!("{}{}", "result_sample_".to_string(), i.to_string());
+            let mut file = std::fs::File::create(output_path).unwrap();
+            CsvWriter::new(&mut file).finish(&mut fold_table).unwrap();
+        }
 
-        // Calculate the fold changes
-        let fold_table = calc_fold_change(positives, negatives);
-        return fold_table.collect().expect("Failed to calculate fold changes");
+
+       
     }
 
     pub fn get_stats(fulgor_file_path: &str, chunk_anno_path: &str, match_anno_path: &str, output_path: &str) {
         let fulgor_table = read_fulgor_table(&fulgor_file_path);
         let chunk_table = read_chunk_annotation(&chunk_anno_path);
         let match_table = read_match_annotation(&match_anno_path);
-        let mut fold_table = process_genomes(fulgor_table, chunk_table, match_table);
-        println!("Table (head 10): {:?}", fold_table.head(Some(10)));
+        process_genomes(fulgor_table, chunk_table, match_table);
+        //println!("Table (head 10): {:?}", fold_table.head(Some(10)));
 
-        let mut file = std::fs::File::create(output_path).unwrap();
+        // let mut file = std::fs::File::create(output_path).unwrap();
 
-        let local: DateTime<Local> = Local::now();
-        println!("{} Saving to file..", local);
+        // let local: DateTime<Local> = Local::now();
+        // println!("{} Saving to file..", local);
         
-        CsvWriter::new(&mut file).finish(&mut fold_table).unwrap();
+        // CsvWriter::new(&mut file).finish(&mut fold_table).unwrap();
 
-        let local: DateTime<Local> = Local::now();
-        println!("{} Done!..", local);
+        // let local: DateTime<Local> = Local::now();
+        // println!("{} Done!..", local);
     }
 
 

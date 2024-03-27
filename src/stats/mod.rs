@@ -3,6 +3,7 @@
 pub mod stats {
 
     use polars::prelude::*;
+    use chrono::prelude::*;
 
     fn read_table(file_path: &str, schema: Schema) -> LazyFrame {
         return LazyCsvReader::new(file_path)
@@ -47,10 +48,7 @@ pub mod stats {
         return read_table(&tabular_path, schema);
     }
 
-    fn process_genomes(fulgor_table: LazyFrame, chunk_table: LazyFrame, match_table: LazyFrame) -> DataFrame {
-        let sample_size = 100;
-
-        // This is quite some memory if we join it all together, perhaps split up later, todo
+    fn add_chunk_metadata(fulgor_table: LazyFrame, chunk_table: LazyFrame) -> LazyFrame {
         let comb_table = fulgor_table
         .with_columns([
             col("query")
@@ -66,100 +64,125 @@ pub mod stats {
             [col("query_genome_id"), col("query_contig_id"), col("chunk")],
             JoinArgs::new(JoinType::Left),
         );
+        comb_table
+    }
 
-        // Make a table to store the AMR count per genome
-        let amr_table = comb_table.clone()
+    fn get_query_counts(comb_table: &LazyFrame, sample_size: u32) -> LazyFrame {
+        let query_sample_table = comb_table.clone()
         .filter(
             col("chunk_annotation").is_not_null()
         ) 
         .group_by(["query_genome_id"])
-        .agg([(len() * lit(sample_size)).alias("amr_count")]); //basically we get the number of negatives to sample
+        .agg([(len() * lit(sample_size)).alias("sample_target_size")]); //basically we get the number of negatives to sample
+        return query_sample_table
+    }
 
-        // println!("AMR table: {}", amr_table.clone().collect().unwrap());
-        
-        let positives = comb_table
-        .clone()
-        .filter(
-            col("chunk_annotation").is_not_null()
-        ) 
+    fn count_match_annotations(table: LazyFrame, match_table: LazyFrame, col_name: &str) -> LazyFrame {
+        let count_table = table
         .join(
             match_table.clone(),
             [col("match_genome_id")],
             [col("match_genome_id")],
             JoinArgs::new(JoinType::Left),
         )
-        .with_columns([
-            (col("query_genome_id").len().over(["match_annotation"]).alias("total_count"))
-        ])
-        .group_by(["match_annotation"])
-        .agg([
-            (len()).alias("pos_count"),
-            col("total_count").unique().sum().alias("pos_sample_size")
-            ]);
-
-        // Randomly sample 10 per genome
-        let negatives = comb_table
-        .filter(
-            col("chunk_annotation").is_null()
-        )
-        .join(
-            amr_table,
-            [col("query_genome_id")],
-            [col("query_genome_id")],
-            JoinArgs::new(JoinType::Left),
-        )
-        .filter(
-            int_range(lit(0), len(), 1, DataType::UInt64)
-            .shuffle(Some(12345)) // random seed
-            .over(["query_genome_id"])
-            .lt(col("amr_count").max()) // Sample at most X
-        )
-        .join(
-            match_table,
-            [col("match_genome_id")],
-            [col("match_genome_id")],
-            JoinArgs::new(JoinType::Left),
-        )
-        .with_columns([
-            (col("query_genome_id").len().over(["match_annotation"]).alias("total_count"))
-        ])
         .group_by(["match_annotation"])
         .agg(
-            [ 
-                (len()).alias("neg_count"),
-                col("total_count").unique().sum().alias("neg_sample_size")
-            ]);
-
-        // Combine positive and negative samples
-        // For each psoitive we want to know the negative
-        // also other way around?
-        let result = positives
-        .join(
-            negatives,
-            [col("match_annotation")],
-            [col("match_annotation")],
-            JoinArgs::new(JoinType::Left),
-        )
+            [
+                (len()).alias(col_name), 
+            ])
         .with_columns([
             (
+                col(col_name).cast(DataType::Float32) 
+                /
+                col(col_name).sum().cast(DataType::Float32)
+            ).alias(col_name)
+            ])
+            ;
+        return count_table;
+    }
 
-                ( (col("pos_count").cast(DataType::Float32) /  col("pos_sample_size").cast(DataType::Float32)) / (col("neg_count").cast(DataType::Float32) / col("neg_sample_size").cast(DataType::Float32))).log(2.0)
-            ).alias("fold_change") // Normalize against sample size
-        ]
-        ).sort(
-            "fold_change",
-            SortOptions {
-                descending: true,
-                nulls_last: true,
-                ..Default::default()
-            },
-        );
+    fn get_positive_set(comb_table: LazyFrame, match_table: LazyFrame) -> LazyFrame {
+        let positives = comb_table
+            .clone()
+            .filter(
+                col("chunk_annotation").is_not_null()
+            ); 
+        let positives = count_match_annotations(positives, match_table, "pos_count");
+        return positives;
+    }
 
-        // Show the entire plan 
-        //let plan = result.explain(true).unwrap();
-        //println!("Extraction plan: {}", plan);
+    fn get_negative_set(comb_table: LazyFrame, match_table: LazyFrame, sample_table: LazyFrame) -> LazyFrame {
+        let negatives = comb_table
+            .filter(
+                col("chunk_annotation").is_null()
+            )
+            .join(
+                sample_table,
+                [col("query_genome_id")],
+                [col("query_genome_id")],
+                JoinArgs::new(JoinType::Left),
+            )
+            .filter(
+                int_range(lit(0), len(), 1, DataType::UInt64)
+                .shuffle(Some(12345)) // random seed
+                .over(["query_genome_id"])
+                .lt(col("sample_target_size").max()) // Sample at most X, NOTE sample could therefore be less than expected
+            );
+        let negatives = count_match_annotations(negatives, match_table, "neg_count");
+        return negatives;
+    }
 
-        return result.collect().expect("Failed to calculate fold changes");
+    fn calc_fold_change(positives: LazyFrame, negatives: LazyFrame) -> LazyFrame {
+        let result = positives
+            .join(
+                negatives,
+                [col("match_annotation")],
+                [col("match_annotation")],
+                JoinArgs::new(JoinType::Left),
+            )
+            .with_columns([
+                (
+                    ( 
+                        (
+                            col("pos_count").cast(DataType::Float32)
+                            / 
+                            col("neg_count").cast(DataType::Float32)
+                        )
+                        .log(2.0)
+                    )
+                ).alias("fold_change") // Normalize against sample size
+            ]
+            ).sort(
+                "fold_change",
+                SortOptions {
+                    descending: true,
+                    nulls_last: true,
+                    ..Default::default()
+                },
+            );
+        return result;
+    }
+
+    fn process_genomes(fulgor_table: LazyFrame, chunk_table: LazyFrame, match_table: LazyFrame) -> DataFrame {
+        let local: DateTime<Local> = Local::now();
+        println!("{} Started calculations..", local);
+        
+        let sample_size: u32 = 100;
+
+        // Add chunk metadata to the fulgor table
+        let comb_table = add_chunk_metadata(fulgor_table, chunk_table);
+
+        // Make a table to store the AMR count per genome
+        let query_sample_table = get_query_counts(&comb_table, sample_size);
+
+        // Get positive and negative set
+        // P.s clones are cheap, we only copy the exectuion plan as these are Lazy dataframe (so not the data)
+        let positives = get_positive_set(comb_table.clone(), match_table.clone());
+        let negatives = get_negative_set(comb_table.clone(), match_table.clone(), query_sample_table); 
+
+        // Calculate the fold changes
+        let fold_table = calc_fold_change(positives, negatives);
+        return fold_table.collect().expect("Failed to calculate fold changes");
     }
 
     pub fn get_stats(fulgor_file_path: &str, chunk_anno_path: &str, match_anno_path: &str, output_path: &str) {
@@ -167,10 +190,17 @@ pub mod stats {
         let chunk_table = read_chunk_annotation(&chunk_anno_path);
         let match_table = read_match_annotation(&match_anno_path);
         let mut fold_table = process_genomes(fulgor_table, chunk_table, match_table);
-        println!("fold table: {:?}", fold_table);
+        println!("Table (head 10): {:?}", fold_table.head(Some(10)));
 
         let mut file = std::fs::File::create(output_path).unwrap();
+
+        let local: DateTime<Local> = Local::now();
+        println!("{} Saving to file..", local);
+        
         CsvWriter::new(&mut file).finish(&mut fold_table).unwrap();
+
+        let local: DateTime<Local> = Local::now();
+        println!("{} Done!..", local);
     }
 
 

@@ -130,8 +130,9 @@ pub mod stats {
             .filter(
                 int_range(lit(0), len(), 1, DataType::UInt64)
                 .shuffle(Some(12345)) // random seed
+                .lt(col("sample_target_size").max())
                 .over(["query_genome_id"])
-                .lt(col("sample_target_size").max()) // Sample at most X, NOTE sample could therefore be less than expected
+                // Sample at most X, NOTE sample could therefore be less than expected
             );
         let negatives = count_match_annotations(negatives, match_table, "neg_count");
         return negatives;

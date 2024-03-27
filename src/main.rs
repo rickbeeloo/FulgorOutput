@@ -94,37 +94,3 @@ fn main() {
 }
 
 
-// fn main() {
-//     let matches = App::new("Fulgor topK output parser")
-//         .arg(Arg::with_name("fulgor")
-//             .help("Path to the fulgor output file")
-//             .required(true)
-//             .index(1))
-//         .arg(Arg::with_name("map")
-//             .help("Path to fulgor filename dump")
-//             .required(true)
-//             .index(2))
-//         .arg(Arg::with_name("output")
-//             .help("Path to output file")
-//             .required(true)
-//             .index(3))
-//         .arg(Arg::with_name("suffix")
-//             .help("Suffix to strip from file paths (DEFAULT: .fna)")
-//             .index(4)
-//             .default_value(".fna")) // Set default value here
-//         .get_matches();
-
-//     // Retrieve values from command line arguments
-//     let fulgor_file = matches.value_of("fulgor").expect("Provide fulgor input file");
-//     let filename_mapping_file = matches.value_of("map").expect("Provide mfur mapping file");
-//     let suffix = matches.value_of("suffix").unwrap_or(".fna");
-//     let output_file = matches.value_of("output").expect("Provide output file");
-
-//     create_tabular(&fulgor_file, &filename_mapping_file, &suffix, &output_file);
-
-//     // // Call functions with command line arguments
-//     // let id_2_name = read_mfur_ids(filename_mapping_file, suffix);
-//     // println!("Running...");
-//     // parse_fulgor_file(fulgor_file, &id_2_name, output_file);
-
-// }

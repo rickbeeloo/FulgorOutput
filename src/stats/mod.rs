@@ -18,10 +18,10 @@ pub mod stats {
         // This is a chunk annotation, so we need two columns. 
         // one called "chunk" and another one "chunk_annotation"
         let schema = Schema::from_iter(vec![
-            Field::new("query_genome_id", DataType::String),
-            Field::new("query_contig_id", DataType::String),
+            Field::new("query_genome_id", DataType::Categorical(None, Default::default())),
+            Field::new("query_contig_id", DataType::Categorical(None, Default::default())),
             Field::new("chunk", DataType::UInt64),
-            Field::new("chunk_annotation", DataType::String)
+            Field::new("chunk_annotation", DataType::Categorical(None, Default::default()))
         ]);
         return read_table(&file_path, schema);
     }
@@ -30,8 +30,8 @@ pub mod stats {
         // This is a chunk annotation, so we need two columns. 
         // one called "chunk" and another one "chunk_annotation"
         let schema = Schema::from_iter(vec![
-            Field::new("match_genome_id", DataType::String),
-            Field::new("match_annotation", DataType::String)
+            Field::new("match_genome_id", DataType::Categorical(None, Default::default())),
+            Field::new("match_annotation",DataType::Categorical(None, Default::default()))
         ]);
         return read_table(&file_path, schema);
     }
@@ -39,10 +39,10 @@ pub mod stats {
     fn read_fulgor_table(tabular_path: &str) -> LazyFrame {
         // Define the data scheme
         let schema = Schema::from_iter(vec![
-            Field::new("query", DataType::String), // query is a concatenation of genome_id&contig_id
+            Field::new("query", DataType::Categorical(None, Default::default())), // query is a concatenation of genome_id&contig_id
             Field::new("chunk", DataType::UInt64),
             Field::new("top", DataType::UInt64),
-            Field::new("match_genome_id", DataType::String) // We have to make sure to get genome ids as strings -  always
+            Field::new("match_genome_id", DataType::Categorical(None, Default::default())) // We have to make sure to get genome ids as strings -  always
         ]);
 
         return read_table(&tabular_path, schema);

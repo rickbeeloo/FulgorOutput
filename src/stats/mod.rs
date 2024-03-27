@@ -3,6 +3,7 @@
 pub mod stats {
 
     use polars::prelude::*;
+    use polars::enable_string_cache;
     use chrono::prelude::*;
 
     fn read_table(file_path: &str, schema: Schema) -> LazyFrame {
@@ -39,10 +40,10 @@ pub mod stats {
     fn read_fulgor_table(tabular_path: &str) -> LazyFrame {
         // Define the data scheme
         let schema = Schema::from_iter(vec![
-            Field::new("query", DataType::Categorical(None, Default::default())), // query is a concatenation of genome_id&contig_id
+            Field::new("query", DataType::String), // query is a concatenation of genome_id&contig_id
             Field::new("chunk", DataType::UInt64),
             Field::new("top", DataType::UInt64),
-            Field::new("match_genome_id", DataType::Categorical(None, Default::default())) // We have to make sure to get genome ids as strings -  always
+            Field::new("match_genome_id", DataType::Categorical(None, Default::default()))
         ]);
 
         return read_table(&tabular_path, schema);
@@ -58,6 +59,10 @@ pub mod stats {
             .rename_fields(["query_genome_id".into(), "query_contig_id".into()].to_vec())
             ])
         .unnest(["query"])
+        .with_columns([
+            col("query_genome_id").cast(DataType::Categorical(None, Default::default())).alias("query_genome_id"),
+            col("query_contig_id").cast(DataType::Categorical(None, Default::default())).alias("query_contig_id"),
+        ])
         .join(
             chunk_table,
             [col("query_genome_id"), col("query_contig_id"), col("chunk")],
@@ -168,7 +173,9 @@ pub mod stats {
         println!("{} Started calculations..", local);
         
         let sample_size: u32 = 100;
-
+        
+        enable_string_cache();
+        
         // Add chunk metadata to the fulgor table
         let comb_table = add_chunk_metadata(fulgor_table, chunk_table);
 

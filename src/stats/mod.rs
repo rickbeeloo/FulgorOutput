@@ -46,11 +46,7 @@ pub mod stats {
             Field::new("match_genome_id", DataType::Categorical(None, Default::default()))
         ]);
 
-        return read_table(&tabular_path, schema);
-    }
-
-    fn add_chunk_metadata(fulgor_table: LazyFrame, chunk_table: LazyFrame) -> LazyFrame {
-        let comb_table = fulgor_table
+        let table = read_table(&tabular_path, schema)
         .with_columns([
             col("query")
             .str()
@@ -62,7 +58,12 @@ pub mod stats {
         .with_columns([
             col("query_genome_id").cast(DataType::Categorical(None, Default::default())).alias("query_genome_id"),
             col("query_contig_id").cast(DataType::Categorical(None, Default::default())).alias("query_contig_id"),
-        ])
+        ]);
+        return table;
+    }
+
+    fn add_chunk_metadata(fulgor_table: DataFrame, chunk_table: LazyFrame) -> LazyFrame {
+        let comb_table = fulgor_table.lazy()
         .join(
             chunk_table,
             [col("query_genome_id"), col("query_contig_id"), col("chunk")],
@@ -130,9 +131,8 @@ pub mod stats {
             .filter(
                 int_range(lit(0), len(), 1, DataType::UInt64)
                 .shuffle(Some(12345)) // random seed
-                .lt(col("sample_target_size").max())
+                .lt(col("sample_target_size").max()) // Sample at most X, NOTE sample could therefore be less than expected
                 .over(["query_genome_id"])
-                // Sample at most X, NOTE sample could therefore be less than expected
             );
         let negatives = count_match_annotations(negatives, match_table, "neg_count");
         return negatives;
